@@ -3,12 +3,16 @@ Google Earth Engine data acquisition utilities for the Delhi NCR
 Urban Change Intelligence project.
 
 This module provides functions to define the study area, query
-Sentinel-2 Level-2A imagery, inspect basic metadata, and export
-composite images to Google Drive.
+Sentinel-2 Level-2A imagery, inspect basic metadata, apply pixel-level
+cloud masking, and export composite images to Google Drive.
 
-Scene-level cloud filtering (via the CLOUDY_PIXEL_PERCENTAGE metadata
-property) is applied here. Pixel-level cloud masking is a Phase 2
-(preprocessing) task and is NOT performed by this module.
+get_sentinel2_collection() applies only scene-level cloud filtering
+(via the CLOUDY_PIXEL_PERCENTAGE metadata property) and is kept as-is
+for Phase 1 reference / reproducibility of what was originally queried.
+
+get_sentinel2_collection_masked() additionally applies pixel-level
+cloud/shadow/snow masking using the Scene Classification Layer (SCL)
+band. Use this version for Phase 2 preprocessing and onward.
 
 Intended to be run inside a Google Colab environment with Earth Engine
 already authenticated and initialized (see notebooks/00_colab_setup.ipynb).
@@ -70,6 +74,69 @@ def get_sentinel2_collection(start_date, end_date, roi, cloud_threshold=20):
     return collection
 
 
+def mask_s2_clouds(image):
+    """
+    Apply pixel-level cloud/shadow/snow masking to a single Sentinel-2
+    L2A image using its Scene Classification Layer (SCL) band.
+
+    SCL class values we mask OUT (set to nodata):
+        3  = Cloud shadow
+        8  = Cloud medium probability
+        9  = Cloud high probability
+        10 = Thin cirrus
+        11 = Snow/ice
+
+    We deliberately keep: vegetation, bare soil, water, unclassified,
+    and dark area pixels — masking too aggressively risks discarding
+    real change signal along with clouds.
+
+    Args:
+        image (ee.Image): a single Sentinel-2 SR_HARMONIZED image,
+            must have an SCL band present (default in this collection).
+
+    Returns:
+        ee.Image: same image with cloud/shadow/snow pixels masked out,
+            SCL band dropped from the output (not needed downstream).
+    """
+    scl = image.select("SCL")
+    mask = (
+        scl.neq(3)
+        .And(scl.neq(8))
+        .And(scl.neq(9))
+        .And(scl.neq(10))
+        .And(scl.neq(11))
+    )
+    return image.updateMask(mask).select(BANDS)
+
+
+def get_sentinel2_collection_masked(start_date, end_date, roi, cloud_threshold=20):
+    """
+    Same as get_sentinel2_collection, but also applies pixel-level cloud
+    masking (mask_s2_clouds) to every image in the collection. Use this
+    for Phase 2 preprocessing and onward — get_sentinel2_collection is
+    kept as-is for Phase 1 reference / reproducibility of what was
+    originally queried.
+
+    Args:
+        start_date (str): 'YYYY-MM-DD'
+        end_date (str): 'YYYY-MM-DD'
+        roi (ee.Geometry): region of interest
+        cloud_threshold (float): max CLOUDY_PIXEL_PERCENTAGE (scene-level
+            pre-filter, applied before pixel masking)
+
+    Returns:
+        ee.ImageCollection: filtered + pixel-masked collection.
+    """
+    collection = (
+        ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+        .filterBounds(roi)
+        .filterDate(start_date, end_date)
+        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_threshold))
+        .map(mask_s2_clouds)
+    )
+    return collection
+
+
 def get_collection_metadata(collection):
     """
     Compute basic, honest metadata about a filtered collection: how many
@@ -100,9 +167,10 @@ def get_median_composite(collection):
     """
     Create a cloud-reduced median composite from a filtered collection.
     This is a simple, defensible way to get one representative image per
-    time period at this stage. Pixel-level cloud masking (Phase 2) will
-    improve on this later — this is Phase 1's "good enough to inspect
-    and export" composite, not a final preprocessed product.
+    time period. When used with get_sentinel2_collection_masked, cloud-
+    masked pixels are excluded from the median calculation entirely
+    (rather than blended in), giving a cleaner composite than Phase 1's
+    scene-level-only filtering.
 
     Args:
         collection (ee.ImageCollection)
