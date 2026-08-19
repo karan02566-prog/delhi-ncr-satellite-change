@@ -1,0 +1,19 @@
+numpy
+pandas
+matplotlib
+scikit-learn
+scipy
+tqdm
+# torch/torchvision: install CPU-only build locally via:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# (Colab already provides GPU-enabled torch — do not reinstall there)
+rasterio
+geopandas
+shapely
+earthengine-api
+geemap
+streamlit
+folium
+plotly
+jupyter
+pytest

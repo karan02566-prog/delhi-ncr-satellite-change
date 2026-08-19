@@ -1,0 +1,42 @@
+# Virtual environment
+venv/
+.venv/
+
+# Data (never commit raw/processed imagery)
+data/raw/*
+data/processed/*
+data/patches/*
+data/labels/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/patches/.gitkeep
+!data/labels/.gitkeep
+
+# Outputs (large generated files)
+outputs/maps/*
+outputs/predictions/*
+!outputs/maps/.gitkeep
+!outputs/predictions/.gitkeep
+
+# Model checkpoints
+*.pt
+*.pth
+*.ckpt
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+
+# Environment/secrets
+.env
+*.json
+!package.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints
