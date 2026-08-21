@@ -32,3 +32,19 @@ class ChangeDetectionPatchDataset(Dataset):
         x = np.nan_to_num(x, nan=0.0)
 
         return torch.from_numpy(x), torch.from_numpy(label.astype(np.int64))
+
+class SiamesePatchDataset(ChangeDetectionPatchDataset):
+    """Same as ChangeDetectionPatchDataset but returns T1, T2 separately
+    (not concatenated) for the Siamese U-Net's dual-branch input."""
+    def __getitem__(self, idx):
+        data = np.load(self.files[idx])
+        t1p, t2p = data["t1"], data["t2"]
+
+        result = compute_change_labels(t1p, t2p, self.ndvi_k, self.ndbi_k)
+        label = result.label
+
+        t1p = np.nan_to_num(t1p.astype(np.float32), nan=0.0)
+        t2p = np.nan_to_num(t2p.astype(np.float32), nan=0.0)
+
+        return torch.from_numpy(t1p), torch.from_numpy(t2p), torch.from_numpy(label.astype(np.int64))    
+    
