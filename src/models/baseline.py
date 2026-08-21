@@ -1,17 +1,20 @@
-"""Phase 4 baseline: shallow FCN over concatenated T1+T2 (12-channel
-input). Establishes a performance floor before the Siamese U-Net."""
+"""Phase 4 baseline (Phase 7 update): shallow FCN over concatenated
+T1+T2 (12-channel input). Dropout added after each block to enable MC
+Dropout uncertainty at inference (Phase 7). Architecture is otherwise
+unchanged from Phase 4/6 — this is the LOCKED model going forward."""
 import torch
 import torch.nn as nn
 
 
 class BaselineChangeCNN(nn.Module):
-    def __init__(self, in_channels: int = 12):
+    def __init__(self, in_channels: int = 12, dropout_p: float = 0.3):
         super().__init__()
 
         def block(cin, cout):
             return nn.Sequential(
                 nn.Conv2d(cin, cout, 3, padding=1), nn.BatchNorm2d(cout), nn.ReLU(inplace=True),
                 nn.Conv2d(cout, cout, 3, padding=1), nn.BatchNorm2d(cout), nn.ReLU(inplace=True),
+                nn.Dropout2d(dropout_p),
             )
 
         self.enc1 = block(in_channels, 32)
@@ -23,7 +26,7 @@ class BaselineChangeCNN(nn.Module):
         self.dec2 = block(128, 64)
         self.up1 = nn.ConvTranspose2d(64, 32, 2, stride=2)
         self.dec1 = block(64, 32)
-        self.out_conv = nn.Conv2d(32, 1, 1)  # binary logit
+        self.out_conv = nn.Conv2d(32, 1, 1)
 
     def forward(self, x):
         e1 = self.enc1(x)
@@ -31,4 +34,4 @@ class BaselineChangeCNN(nn.Module):
         b = self.bottleneck(self.pool2(e2))
         d2 = self.dec2(torch.cat([self.up2(b), e2], dim=1))
         d1 = self.dec1(torch.cat([self.up1(d2), e1], dim=1))
-        return self.out_conv(d1).squeeze(1)  # (B, H, W) logits
+        return self.out_conv(d1).squeeze(1)
