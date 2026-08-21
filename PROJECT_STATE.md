@@ -1,7 +1,7 @@
 # PROJECT STATE
 
 ## Current Phase
-PHASE 6 — Model Evaluation (COMPLETE)
+PHASE 7 — MC Dropout Uncertainty (COMPLETE)
 
 ## Completed Phases
 - Phase 0: Project Initialization
@@ -11,10 +11,12 @@ PHASE 6 — Model Evaluation (COMPLETE)
 - Phase 4: Baseline Model
 - Phase 5: Siamese U-Net
 - Phase 6: Model Evaluation
+- Phase 7: MC Dropout Uncertainty
 
 ## Current Objective
-Move into Phase 7 - MC Dropout uncertainty quantification on the
-LOCKED baseline model (see Phase 6 decision below).
+Move into Phase 8 - Change characterization (rule-based/spectral-index
+categorization of detected change into built-up expansion, vegetation
+loss/gain, other).
 
 ## Dataset Information
 ROI: rectangular bounding box [76.75, 28.30, 77.60, 28.95] (Delhi NCR,
@@ -90,23 +92,43 @@ test, which is the more important check than hitting exact percentages.
 Split manifest saved to: {DRIVE_DIR}/data_labels_split_manifest.json
 
 ## Model Information
-Two models trained and evaluated on the identical split/loss/patch
-cache: BaselineChangeCNN (Phase 4) and SiameseUNet (Phase 5).
-BaselineChangeCNN is the LOCKED model as of Phase 6 (see decision
-below) - carried forward into Phase 7 (MC Dropout) and all subsequent
-phases. Compute: Google Colab free GPU. Patch size locked at 256x256.
+Two models trained/evaluated on the identical split/loss/patch cache:
+BaselineChangeCNN (Phase 4/7) and SiameseUNet (Phase 5). BaselineChangeCNN
+is the LOCKED model - carried forward into Phase 7 (MC Dropout, now
+complete) and all subsequent phases. As of Phase 7, BaselineChangeCNN
+includes Dropout2d(p=0.3) after each conv block (architecture change
+from Phase 4/6 - required a retrain, see below). Compute: Google Colab
+free GPU. Patch size locked at 256x256.
 
-## Baseline Model Results (Phase 4)
-Architecture: shallow encoder-decoder CNN (BaselineChangeCNN), 12-channel
-input (T1 6-band + T2 6-band concatenated), skip connections, single
-binary change-logit output.
-Loss: masked BCE + Dice (0.5/0.5 weight), label 255 excluded via mask.
-Trained: 20 epochs, batch_size=8, Adam lr=1e-3, Colab T4 GPU.
-Checkpoints: {DRIVE_DIR}/checkpoints/baseline_best.pt (best val F1),
-baseline_latest.pt (resume-safe, every epoch).
-
+## Baseline Model Results — Phase 4/6 (NO dropout, superseded for
+## inference but checkpoint preserved for reference)
+Architecture: shallow encoder-decoder CNN, 12-channel input (T1+T2
+concatenated), skip connections, single binary change-logit output.
+NO dropout layers.
 VAL (epoch 20, best): F1=0.8050, IoU=0.6761, precision=0.8152, recall=0.8093
-TEST (n=56, held out): F1=0.8329, IoU=0.7144, precision=0.8185, recall=0.8519
+TEST (n=56): F1=0.8329, IoU=0.7144, precision=0.8185, recall=0.8519
+Checkpoints (renamed in Phase 7, preserved on Drive):
+  {DRIVE_DIR}/checkpoints/baseline_nodropout_best.pt
+  {DRIVE_DIR}/checkpoints/baseline_nodropout_latest.pt
+
+## Baseline Model Results — Phase 7 (WITH dropout, CURRENT/ACTIVE model)
+Architecture: identical to above but Dropout2d(p=0.3) added after each
+conv block (src/models/baseline.py), required full retrain (dropout
+changes the computation graph - old weights incompatible).
+Loss: masked BCE + Dice (0.5/0.5), label 255 excluded via mask.
+Trained: 20 epochs, batch_size=8, Adam lr=1e-3, Colab T4 GPU, resume=False.
+Checkpoints: {DRIVE_DIR}/checkpoints/baseline_best.pt (best val F1),
+baseline_latest.pt.
+
+VAL (epoch 18, best): F1=0.7907, IoU=0.6572
+TEST (n=56): F1=0.7768, IoU=0.6359, precision=0.7734, recall=0.7849
+
+Dropout cost ~5-6 F1 points vs the non-dropout version (test F1 0.8329
+-> 0.7768) - an expected, disclosed tradeoff (dropout regularization
+vs raw accuracy), not a bug. Likely amplified by the small training
+set (700 patches) relative to a fairly aggressive p=0.3 dropout rate.
+This dropout-enabled checkpoint is the ACTIVE model for all Phase 8+
+work (characterization, spatial analysis, dashboard).
 
 ## Siamese U-Net Results (Phase 5)
 Architecture: SiameseUNet, shared-weight encoder branches for T1/T2
@@ -116,15 +138,15 @@ Same loss/split/hyperparameters as baseline for direct comparison.
 Checkpoints: {DRIVE_DIR}/checkpoints/siamese_best.pt, siamese_latest.pt
 
 VAL (epoch 16, best): F1=0.7877, IoU=0.6534, precision=0.7887, recall=0.8074
-TEST (n=56, held out): F1=0.8243, IoU=0.7020, precision=0.8092, recall=0.8476
+TEST (n=56): F1=0.8243, IoU=0.7020, precision=0.8092, recall=0.8476
 
-## Baseline vs Siamese U-Net Comparison (Phase 5/6)
+## Baseline vs Siamese U-Net Comparison (Phase 5/6, no-dropout baseline)
 | Model          | Val F1 | Val IoU | Test F1 | Test IoU |
 |----------------|--------|---------|---------|----------|
 | Baseline CNN   | 0.8050 | 0.6761  | 0.8329  | 0.7144   |
 | Siamese U-Net  | 0.7877 | 0.6534  | 0.8243  | 0.7020   |
 
-## Phase 6 — Confusion Matrix (test set, pixel-level)
+## Phase 6 — Confusion Matrix (test set, pixel-level, no-dropout models)
 Baseline CNN:   TP=398770 FP=89919  FN=66653  TN=3114674
   FP rate=0.0281, FN rate=0.1432
 Siamese U-Net:  TP=396483 FP=97303  FN=68940  TN=3107290
@@ -133,8 +155,7 @@ Siamese U-Net:  TP=396483 FP=97303  FN=68940  TN=3107290
 Siamese is worse on BOTH false positive rate AND false negative rate -
 confirms Phase 5 aggregate metrics, not a precision/recall tradeoff in
 a different direction. Consistent result across two independent
-evaluation methods (aggregate F1/IoU, and pixel-level confusion
-matrix), on both val and test splits.
+evaluation methods, on both val and test splits.
 
 FP/FN error-analysis chips (T1 | ground truth | overlay with FP=blue,
 FN=orange) saved to Drive for both models:
@@ -142,17 +163,39 @@ FN=orange) saved to Drive for both models:
   {DRIVE_DIR}/reports/error_analysis_siamese/*.png (8 chips)
 
 ## DECISION (LOCKED)
-BaselineChangeCNN is the model carried forward for Phase 7 (MC Dropout)
-and all subsequent phases (8-12). Siamese U-Net is NOT pursued further.
-Rationale: consistent underperformance across every metric (F1, IoU,
-precision, recall) on both val and test, confirmed at pixel level by
-confusion matrix (worse FP rate AND worse FN rate, not a tradeoff).
-Plausible causes: small dataset (700 train patches) may favor the
-baseline's simpler joint-context architecture; Phase 3 label noise
-(agricultural NDVI speckle) likely caps achievable performance
-similarly for both, reducing any advantage complexity could offer.
-Per project working rules, this is reported honestly rather than
-pursuing further Siamese tuning without a compelling reason to do so.
+BaselineChangeCNN is the model carried forward for Phase 7 onward.
+Siamese U-Net is NOT pursued further. Rationale: consistent
+underperformance across every metric on both val and test, confirmed
+at pixel level by confusion matrix (worse FP rate AND worse FN rate,
+not a tradeoff). Reported honestly rather than pursuing further
+Siamese tuning without a compelling reason to do so.
+
+## Phase 7 — MC Dropout Uncertainty
+Added Dropout2d(p=0.3) after each conv block in BaselineChangeCNN,
+requiring a retrain from scratch (dropout changes the architecture -
+old checkpoints renamed to baseline_nodropout_best.pt /
+baseline_nodropout_latest.pt and preserved on Drive, not deleted).
+Results: see "Baseline Model Results — Phase 7" above.
+
+MC Dropout implementation (src/inference/uncertainty.py):
+mc_dropout_predict() runs N=20 stochastic forward passes with
+model.train() active at inference (keeps Dropout2d sampling different
+subnetworks each pass; BatchNorm also uses batch stats under
+model.train() - accepted standard approximation for MC Dropout).
+Computes mean probability map + std-deviation uncertainty map per
+patch. Interpreted as MODEL uncertainty (disagreement across dropout
+samples), NOT calibrated real-world/ground-truth uncertainty - stated
+explicitly in code docstring and here.
+
+Qualitative validation: exported 8 uncertainty chips (T1 | mean
+probability | uncertainty heatmap) to
+{DRIVE_DIR}/reports/uncertainty_maps/. Manually reviewed 3 - high
+uncertainty consistently traces change-region BOUNDARIES and mixed-
+pixel edges (e.g. road/canal margins), not scattered noise or solid
+interior regions. Model is confidently certain in solid change and
+solid no-change interiors, uncertain only at genuinely ambiguous
+transition zones. This is the expected, correct MC Dropout behavior -
+qualitatively validates the uncertainty estimates are meaningful.
 
 ## Important Decisions (LOCKED)
 - Compute: Google Colab, free-tier GPU. Checkpoints saved to Drive.
@@ -168,8 +211,10 @@ pursuing further Siamese tuning without a compelling reason to do so.
   not random patch split - prevents spatial leakage.
 - DataLoader num_workers=0 for all training/eval (Drive FUSE mount is
   unstable under concurrent worker reads - see Known Issues).
-- MODEL LOCKED: BaselineChangeCNN carried forward from Phase 6 onward.
-  Siamese U-Net not pursued further (see DECISION above).
+- MODEL LOCKED: BaselineChangeCNN (WITH dropout, Phase 7 version)
+  carried forward from Phase 7 onward. Siamese U-Net not pursued further.
+- MC Dropout: N=20 passes, model.train() at inference, mean+std maps.
+  Documented as model uncertainty, not real-world calibrated uncertainty.
 
 ## Files Created
 (Phase 0-2 files unchanged, plus:)
@@ -179,11 +224,10 @@ pursuing further Siamese tuning without a compelling reason to do so.
   geographic_split, summarize_split, save_split_manifest)
 - notebooks/03_label_generation.ipynb
 - src/data/patch_cache.py (build_patch_cache)
-- src/data/patch_dataset.py (ChangeDetectionPatchDataset - concatenated
-  12-channel input for baseline; SiamesePatchDataset - separate T1/T2
-  6-channel tensors for Siamese U-Net. Both regenerate labels on-the-fly
-  via compute_change_labels for consistency with Phase 3 logic.)
-- src/models/baseline.py (BaselineChangeCNN)
+- src/data/patch_dataset.py (ChangeDetectionPatchDataset,
+  SiamesePatchDataset)
+- src/models/baseline.py (BaselineChangeCNN - NOW includes
+  Dropout2d(p=0.3) per block, updated in Phase 7)
 - src/models/siamese_unet.py (SharedEncoder, SiameseUNet)
 - src/training/losses.py (masked_bce_dice_loss)
 - src/training/metrics.py (compute_change_metrics)
@@ -191,6 +235,8 @@ pursuing further Siamese tuning without a compelling reason to do so.
 - src/training/train_siamese.py (train_siamese)
 - src/training/evaluate.py (compute_confusion_matrix,
   print_confusion_matrix, export_fp_fn_chips)
+- src/inference/uncertainty.py (mc_dropout_predict,
+  export_uncertainty_chips)
 
 ## Known Issues
 (Phase 0-2 issues unchanged, plus:)
@@ -209,47 +255,56 @@ pursuing further Siamese tuning without a compelling reason to do so.
 - Python module caching in Colab: git pull updating an already-imported
   .py file requires importlib.reload() or Restart Session to pick up
   changes (new names/classes won't appear via plain re-import).
-- Common session bug encountered in Phase 6: reusing a bare `model`
-  variable name across both baseline and Siamese training left it
-  bound to whichever was trained/loaded last, causing a
-  TypeError (SiameseUNet.forward() missing 't2') when accidentally
-  passed to code expecting the baseline's single-input forward. FIX:
-  always load evaluation models into explicitly distinct variable
-  names (model_base, model_siam), never reuse a generic `model`.
+- Reusing a bare `model` variable name across multiple models left it
+  bound to whichever was trained/loaded last, causing a TypeError when
+  passed to code expecting a different model's forward signature. FIX:
+  always load models into explicitly distinct variable names
+  (model_base, model_siam), never reuse a generic `model`.
 - Siamese U-Net underperformed baseline CNN on both val/test aggregate
-  metrics AND pixel-level confusion matrix (worse FP and FN rate) -
-  not a bug, a genuine, consistently-confirmed comparison result.
+  metrics AND pixel-level confusion matrix - not a bug, a genuine,
+  consistently-confirmed comparison result.
+- Adding dropout to BaselineChangeCNN required a full retrain (weights
+  incompatible with new architecture) and cost ~5-6 F1 points on test
+  set vs the non-dropout version - expected regularization tradeoff,
+  disclosed, not hidden. Non-dropout checkpoint preserved on Drive
+  under baseline_nodropout_*.pt for reference/comparison only.
 
 ## Commands Already Run
 (Phase 0-2 unchanged, plus:)
 - Phase 3: computed change labels, generated 1008 usable label patches,
   exported 45 verification chips, manually reviewed, generated
   geographic split (700/140/56), saved manifest to Drive.
-- Phase 4: built patch cache, trained BaselineChangeCNN 20 epochs,
-  evaluated val (per-epoch) and test (final) splits.
+- Phase 4: built patch cache, trained BaselineChangeCNN (no dropout)
+  20 epochs, evaluated val/test.
 - Phase 5: trained SiameseUNet 20 epochs on same cache/split/loss,
   evaluated val/test, compared against baseline.
 - Phase 6: computed pixel-level confusion matrix for both models on
-  test set, exported 8 FP/FN error-analysis chips per model to Drive,
-  formally locked in BaselineChangeCNN as the model going forward.
+  test set, exported FP/FN error-analysis chips, locked in
+  BaselineChangeCNN as the model going forward.
+- Phase 7: added Dropout2d(p=0.3) to BaselineChangeCNN, renamed old
+  no-dropout checkpoints to preserve them, retrained 20 epochs from
+  scratch (resume=False), evaluated val/test, ran MC Dropout (N=20
+  passes) on test set, exported 8 uncertainty chips to Drive, manually
+  reviewed 3 - confirmed uncertainty concentrates at change-region
+  boundaries as expected.
 
 ## Last Successful Test/Build
-Confusion matrices computed successfully for both models on test set
-(n=56 patches, 3,670,016 valid pixels). Baseline confirmed superior on
-every axis (FP rate, FN rate) matching Phase 5's aggregate metrics.
-Error-analysis chips exported to Drive for both models.
+MC Dropout uncertainty chips exported successfully to Drive. Manual
+review of 3 chips confirmed uncertainty (std) heatmaps concentrate
+along change-region boundaries and mixed-pixel edges, with low
+uncertainty in solid interior regions - the expected, correct pattern,
+qualitatively validating the uncertainty estimates.
 
 ## Next Exact Step
-Start Phase 7 - MC Dropout uncertainty. Add dropout layers to
-BaselineChangeCNN (the LOCKED model). Enable dropout at inference
-(call model.train() during inference to keep dropout active, NOT
-model.eval()), run N stochastic forward passes per patch (start N=20),
-compute mean probability map + standard deviation (uncertainty map).
-Analyze whether high-uncertainty regions correlate with known trouble
-spots (change-region boundaries, the accepted agricultural NDVI noise
-from Phase 3 - check against the Phase 3 verification chip locations
-if useful). Interpret uncertainty as MODEL uncertainty, not absolute
-real-world uncertainty - state this explicitly in any documentation.
+Start Phase 8 - Change characterization. Using the dropout-enabled
+baseline's mean prediction map, apply rule-based/spectral-index
+characterization (delta-NDVI sign/magnitude, delta-NDBI sign/magnitude)
+to categorize detected change pixels as built-up expansion, vegetation
+loss, vegetation gain, or other/uncertain. This is descriptive
+characterization layered on top of the binary change detector, NOT a
+retrained multi-class model (per project scope decision - binary core
+ML + rule-based characterization layer since multi-class labels aren't
+reliably achievable given Phase 3's weakly-supervised label approach).
 
 ## Anything to know before continuing
 This project spans two environments: local Windows machine (repo/git/
@@ -264,11 +319,12 @@ IMPORTANT: labels are weakly-supervised/spectral-index-derived with
 manual verification on a sample - must be described this way in any
 README/report, never as manually verified ground truth across the full
 dataset.
-IMPORTANT: BaselineChangeCNN is LOCKED as the model going forward as of
-Phase 6. Siamese U-Net underperformance is a real, disclosed finding -
-do not silently favor Siamese U-Net in any future phase without
-re-justifying it against this result.
-IMPORTANT: current BaselineChangeCNN architecture (src/models/baseline.py)
-has NO dropout layers yet - Phase 7 will need to add them before MC
-Dropout inference is possible. This likely means retraining, or adding
-dropout + fine-tuning from the existing checkpoint - decide in Phase 7.
+IMPORTANT: BaselineChangeCNN (WITH dropout, Phase 7 version) is LOCKED
+as the model going forward. Siamese U-Net underperformance and the
+dropout accuracy tradeoff are both real, disclosed findings - report
+honestly, do not silently paper over either in later phases.
+IMPORTANT: two baseline checkpoint sets exist on Drive -
+baseline_best.pt/baseline_latest.pt (WITH dropout, ACTIVE/current) and
+baseline_nodropout_best.pt/baseline_nodropout_latest.pt (reference
+only, from Phase 4/6). Always load baseline_best.pt (not the
+nodropout version) for any Phase 8+ work unless explicitly comparing.
