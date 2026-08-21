@@ -1,13 +1,14 @@
 # PROJECT STATE
 
 ## Current Phase
-PHASE 3 — Ground Truth / Labels (COMPLETE)
+PHASE 4 — Baseline Model (COMPLETE)
 
 ## Completed Phases
 - Phase 0: Project Initialization
 - Phase 1: Data Acquisition
 - Phase 2: Preprocessing
 - Phase 3: Ground Truth / Labels
+- Phase 4: Baseline Model
 
 ## Current Objective
 Move into Phase 4 - Baseline model (simple CNN or image-difference
@@ -94,6 +95,24 @@ BCE + Dice loss, MC Dropout at inference. Baseline (simple CNN or
 image-difference method) planned FIRST in Phase 4. Compute: Google
 Colab free GPU. Patch size locked at 256x256.
 
+## Baseline Model Results (Phase 4)
+Architecture: shallow encoder-decoder CNN (BaselineChangeCNN), 12-channel
+input (T1 6-band + T2 6-band concatenated), skip connections, single
+binary change-logit output. NOT the Siamese U-Net — deliberate simpler
+baseline to establish a performance floor first.
+Loss: masked BCE + Dice (0.5/0.5 weight), label 255 excluded via mask.
+Trained: 20 epochs, batch_size=8, Adam lr=1e-3, Colab T4 GPU.
+Checkpoints: {DRIVE_DIR}/checkpoints/baseline_best.pt (best val F1),
+baseline_latest.pt (resume-safe, every epoch).
+
+VAL (epoch 20, best): F1=0.8050, IoU=0.6761, precision=0.8152, recall=0.8093
+TEST (n=56, held out, real numbers): F1=0.8329, IoU=0.7144,
+  precision=0.8185, recall=0.8519
+
+These are the real baseline numbers to beat with the Siamese U-Net.
+Not cherry-picked — reported as-is including known limitations (small
+test set n=56, some agricultural NDVI label noise from Phase 3).
+
 ## Important Decisions (LOCKED)
 - Compute: Google Colab, free-tier GPU. Checkpoints saved to Drive.
 - Data source: Google Earth Engine Python API.
@@ -151,12 +170,12 @@ Verification chips manually reviewed - low/medium stratum labels look
 accurate; high stratum has some accepted agricultural noise.
 
 ## Next Exact Step
-Start Phase 4 - Baseline model. Implement a simple CNN or
-image-difference baseline, build the training loop with checkpointing
-to Drive, compute precision/recall/F1/IoU on the val split. Use
-patch_size=256, the split from data_labels_split_manifest.json, and
-treat label value 255 (invalid/cloud-masked) as an ignore-index in the
-loss - do NOT treat it as no-change.
+Start Phase 5 - Siamese U-Net. Shared-weight encoder branches for T1/T2
+(not concatenated input like the baseline), feature fusion, U-Net
+decoder with skip connections, same masked BCE+Dice loss, same
+train/val/test split and patch cache. Compare directly against Phase 4
+baseline numbers (val F1=0.8050, test F1=0.8329) to confirm added
+architectural complexity is actually justified.
 
 ## Anything to know before continuing
 This project spans two environments: local Windows machine (repo/git/
