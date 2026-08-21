@@ -31,8 +31,9 @@ def train_baseline(train_dataset, val_dataset, checkpoint_dir: str,
         best_f1 = ckpt.get("best_f1", 0.0)
         print(f"Resumed from epoch {start_epoch}, best_f1={best_f1:.4f}")
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    
 
     for epoch in range(start_epoch, epochs):
         model.train()
