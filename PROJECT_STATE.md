@@ -1,7 +1,7 @@
 # PROJECT STATE
 
 ## Current Phase
-PHASE 4 — Baseline Model (COMPLETE)
+PHASE 5 — Siamese U-Net (COMPLETE)
 
 ## Completed Phases
 - Phase 0: Project Initialization
@@ -9,11 +9,14 @@ PHASE 4 — Baseline Model (COMPLETE)
 - Phase 2: Preprocessing
 - Phase 3: Ground Truth / Labels
 - Phase 4: Baseline Model
+- Phase 5: Siamese U-Net
 
 ## Current Objective
-Move into Phase 4 - Baseline model (simple CNN or image-difference
-method, trained on Colab GPU, to establish a performance floor before
-building the Siamese U-Net).
+Move into Phase 6 - Model evaluation. Formal comparison (confusion
+matrix, false positive/negative spatial analysis) between baseline CNN
+and Siamese U-Net on the test set, and a decision on which model to
+carry forward for Phases 7-10 (MC Dropout, characterization, spatial
+analysis, dashboard).
 
 ## Dataset Information
 ROI: rectangular bounding box [76.75, 28.30, 77.60, 28.95] (Delhi NCR,
@@ -90,16 +93,17 @@ test, which is the more important check than hitting exact percentages.
 Split manifest saved to: {DRIVE_DIR}/data_labels_split_manifest.json
 
 ## Model Information
-Not yet built. Planned: Siamese U-Net, shared-weight encoders,
-BCE + Dice loss, MC Dropout at inference. Baseline (simple CNN or
-image-difference method) planned FIRST in Phase 4. Compute: Google
-Colab free GPU. Patch size locked at 256x256.
+Two models trained and evaluated on the identical split/loss/patch
+cache for direct comparison: BaselineChangeCNN (Phase 4) and
+SiameseUNet (Phase 5). See results below. Baseline currently the
+stronger model. MC Dropout uncertainty (Phase 7) planned on whichever
+model is selected in Phase 6. Compute: Google Colab free GPU. Patch
+size locked at 256x256.
 
 ## Baseline Model Results (Phase 4)
 Architecture: shallow encoder-decoder CNN (BaselineChangeCNN), 12-channel
 input (T1 6-band + T2 6-band concatenated), skip connections, single
-binary change-logit output. NOT the Siamese U-Net — deliberate simpler
-baseline to establish a performance floor first.
+binary change-logit output.
 Loss: masked BCE + Dice (0.5/0.5 weight), label 255 excluded via mask.
 Trained: 20 epochs, batch_size=8, Adam lr=1e-3, Colab T4 GPU.
 Checkpoints: {DRIVE_DIR}/checkpoints/baseline_best.pt (best val F1),
@@ -109,9 +113,37 @@ VAL (epoch 20, best): F1=0.8050, IoU=0.6761, precision=0.8152, recall=0.8093
 TEST (n=56, held out, real numbers): F1=0.8329, IoU=0.7144,
   precision=0.8185, recall=0.8519
 
-These are the real baseline numbers to beat with the Siamese U-Net.
-Not cherry-picked — reported as-is including known limitations (small
-test set n=56, some agricultural NDVI label noise from Phase 3).
+## Siamese U-Net Results (Phase 5)
+Architecture: SiameseUNet, shared-weight encoder branches for T1/T2
+(6-band input each, NOT concatenated), absolute-difference feature
+fusion at each encoder scale (e1, e2, bottleneck), U-Net decoder with
+skip connections. Same loss (masked BCE+Dice), same split, same
+20 epochs/batch_size=8/Adam lr=1e-3 as baseline for direct comparison.
+Checkpoints: {DRIVE_DIR}/checkpoints/siamese_best.pt, siamese_latest.pt
+
+VAL (epoch 16, best): F1=0.7877, IoU=0.6534, precision=0.7887, recall=0.8074
+TEST (n=56, held out, real numbers): F1=0.8243, IoU=0.7020,
+  precision=0.8092, recall=0.8476
+
+## Baseline vs Siamese U-Net Comparison
+| Model          | Val F1 | Val IoU | Test F1 | Test IoU |
+|----------------|--------|---------|---------|----------|
+| Baseline CNN   | 0.8050 | 0.6761  | 0.8329  | 0.7144   |
+| Siamese U-Net  | 0.7877 | 0.6534  | 0.8243  | 0.7020   |
+
+FINDING: Siamese U-Net did NOT outperform the simpler baseline on
+either split - marginally behind on every metric. Reported honestly
+per project rule against fabricating or cherry-picking results.
+Plausible causes: small dataset (700 train patches) may favor the
+baseline's simpler joint-context architecture over the Siamese design's
+assumption that shared low-level features help; Phase 3 label noise
+(agricultural NDVI speckle) likely caps achievable performance
+similarly for both architectures, reducing any advantage complexity
+could offer. BASELINE CNN is the stronger model on this dataset and
+is the leading candidate to carry forward for Phase 7 MC Dropout
+uncertainty quantification, pending Phase 6's more detailed error
+analysis - not yet attempted to tune Siamese further (lr schedule,
+more epochs, augmentation).
 
 ## Important Decisions (LOCKED)
 - Compute: Google Colab, free-tier GPU. Checkpoints saved to Drive.
@@ -125,6 +157,8 @@ test set n=56, some agricultural NDVI label noise from Phase 3).
 - Patch size: 256x256, fixed from Phase 3 onward.
 - Geographic (column-stripe) train/val/test split with buffer zones,
   not random patch split - prevents spatial leakage.
+- DataLoader num_workers=0 for all training (Drive FUSE mount is
+  unstable under concurrent worker reads - see Known Issues).
 
 ## Files Created
 (Phase 0-2 files unchanged, plus:)
@@ -133,6 +167,21 @@ test set n=56, some agricultural NDVI label noise from Phase 3).
   select_verification_sample, export_verification_chips,
   geographic_split, summarize_split, save_split_manifest)
 - notebooks/03_label_generation.ipynb
+- src/data/patch_cache.py (build_patch_cache - caches T1/T2 patches
+  as .npz to Drive per split manifest)
+- src/data/patch_dataset.py (ChangeDetectionPatchDataset - concatenated
+  12-channel input for baseline; SiamesePatchDataset - separate T1/T2
+  6-channel tensors for Siamese U-Net. Both regenerate labels on-the-fly
+  via compute_change_labels for consistency with Phase 3 logic.)
+- src/models/baseline.py (BaselineChangeCNN)
+- src/models/siamese_unet.py (SharedEncoder, SiameseUNet)
+- src/training/losses.py (masked_bce_dice_loss - excludes label 255)
+- src/training/metrics.py (compute_change_metrics - precision/recall/
+  F1/IoU for the change class, masking invalid pixels)
+- src/training/train.py (train_baseline - epoch loop, checkpointing,
+  resume support)
+- src/training/train_siamese.py (train_siamese - same structure,
+  dual-input forward signature)
 
 ## Known Issues
 (Phase 0-2 issues unchanged, plus:)
@@ -147,12 +196,24 @@ test set n=56, some agricultural NDVI label noise from Phase 3).
 - geographic_split() produced test=5.6% instead of requested 15% because
   patch availability isn't perfectly uniform across raster width.
   Change-fraction distribution still consistent across splits, accepted
-  as-is. Revisit by rebalancing split fractions if Phase 6 test metrics
-  look unstable due to small n=56.
+  as-is. Test set (n=56) is small - Phase 6 should treat test metrics
+  with appropriate caution given limited sample size.
 - Colab runtime disconnects/resets on idle wipe ALL Python state even
   though old cell outputs remain visible. If any NameError/
   ModuleNotFoundError appears for something that worked minutes earlier,
   assume session reset - rerun every cell from the top.
+- Google Drive FUSE mount is unstable under concurrent DataLoader worker
+  reads (OSError/ConnectionAbortedError with num_workers>0). FIX APPLIED:
+  num_workers=0 in all DataLoaders. Slower but stable. Apply to any new
+  DataLoader usage.
+- Python module caching in Colab: after `git pull` updates a .py file
+  that was already imported earlier in the session, plain re-import
+  will NOT pick up changes. FIX: use importlib.reload() on the specific
+  module, or Restart Session for a clean reload, before importing new
+  names added to an already-imported module.
+- Siamese U-Net underperformed the baseline CNN on both val and test
+  (see comparison table above) - not a bug, a genuine architecture
+  comparison result, reported as-is.
 
 ## Commands Already Run
 (Phase 0-2 unchanged, plus:)
@@ -162,20 +223,30 @@ test set n=56, some agricultural NDVI label noise from Phase 3).
   verification chips + CSV log to Drive, manually reviewed a subset of
   chips, generated geographic train/val/test split (700/140/56), saved
   split manifest to Drive.
+- Phase 4: built patch cache (.npz per split) to Drive, trained
+  BaselineChangeCNN for 20 epochs on Colab T4 GPU, evaluated on val
+  (per-epoch) and test (final, once) splits.
+- Phase 5: trained SiameseUNet for 20 epochs on the same patch cache/
+  split/loss, evaluated on val (per-epoch) and test (final, once)
+  splits, compared directly against baseline.
 
 ## Last Successful Test/Build
-Split manifest saved successfully. summarize_split() confirmed
-consistent change-fraction distribution across train/val/test.
-Verification chips manually reviewed - low/medium stratum labels look
-accurate; high stratum has some accepted agricultural noise.
+Both baseline and Siamese U-Net trained successfully for 20 epochs
+each on Colab T4 GPU with no crashes (after fixes: float32 casting,
+num_workers=0, importlib.reload for module cache issues). Test-set
+metrics computed for both models (n=56 held-out patches). Comparison
+table confirms baseline CNN is currently the stronger model.
 
 ## Next Exact Step
-Start Phase 5 - Siamese U-Net. Shared-weight encoder branches for T1/T2
-(not concatenated input like the baseline), feature fusion, U-Net
-decoder with skip connections, same masked BCE+Dice loss, same
-train/val/test split and patch cache. Compare directly against Phase 4
-baseline numbers (val F1=0.8050, test F1=0.8329) to confirm added
-architectural complexity is actually justified.
+Start Phase 6 - Model evaluation. For BOTH models on the test set:
+confusion matrix, false positive/negative spatial visualization
+(overlay FP/FN on actual T1/T2 imagery for a handful of test patches
+to understand WHERE and WHY each model fails - e.g. does it correlate
+with the known agricultural noise patches from Phase 3?). Formally
+decide baseline vs Siamese U-Net as the model to carry forward into
+Phase 7 (MC Dropout uncertainty) - default to baseline given current
+results, unless error analysis reveals a compelling reason otherwise.
+Document the decision and rationale in PROJECT_STATE.md.
 
 ## Anything to know before continuing
 This project spans two environments: local Windows machine (repo/git/
@@ -190,3 +261,6 @@ IMPORTANT: labels are weakly-supervised/spectral-index-derived with
 manual verification on a sample - must be described this way in any
 README/report, never as manually verified ground truth across the full
 dataset.
+IMPORTANT: Siamese U-Net underperforming baseline is a real, disclosed
+finding - do not let future phases silently favor Siamese U-Net without
+re-justifying it against this result.
