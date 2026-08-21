@@ -1,7 +1,7 @@
 # PROJECT STATE
 
 ## Current Phase
-PHASE 7 — MC Dropout Uncertainty (COMPLETE)
+PHASE 8 — Change Characterization (COMPLETE)
 
 ## Completed Phases
 - Phase 0: Project Initialization
@@ -12,11 +12,11 @@ PHASE 7 — MC Dropout Uncertainty (COMPLETE)
 - Phase 5: Siamese U-Net
 - Phase 6: Model Evaluation
 - Phase 7: MC Dropout Uncertainty
+- Phase 8: Change Characterization
 
 ## Current Objective
-Move into Phase 8 - Change characterization (rule-based/spectral-index
-categorization of detected change into built-up expansion, vegetation
-loss/gain, other).
+Move into Phase 9 - Spatial intelligence (changed area across all test
+patches, hotspot detection, proximity analysis where feasible).
 
 ## Dataset Information
 ROI: rectangular bounding box [76.75, 28.30, 77.60, 28.95] (Delhi NCR,
@@ -197,6 +197,29 @@ solid no-change interiors, uncertain only at genuinely ambiguous
 transition zones. This is the expected, correct MC Dropout behavior -
 qualitatively validates the uncertainty estimates are meaningful.
 
+## Phase 8 — Change Characterization
+Rule-based categorization (src/spatial/characterization.py) applied
+ONLY to pixels the LOCKED baseline model predicts as CHANGE (not
+ground-truth labels). NOT a retrained multi-class model - deliberate
+scope decision since Phase 3 labels are weakly-supervised and don't
+support reliable multi-class ground truth.
+
+Rule: NDBI increase beyond threshold (0.05) -> built-up expansion
+(checked first, most specific category); else NDVI decrease beyond
+threshold -> vegetation loss; else NDVI increase beyond threshold ->
+vegetation gain; else -> other/uncertain.
+
+Sample result (1 test patch, 256x256): builtup_expansion=7.57% of
+valid pixels, vegetation_loss=1.34%, vegetation_gain=3.06%,
+other_uncertain=3.53% (totals ~15.6%, consistent with known model
+change rate). Exported color-coded characterization chip to
+{DRIVE_DIR}/reports/characterization_sample.png for visual sanity
+check (red=builtup, orange=veg loss, green=veg gain).
+
+NOTE: only run on 1 sample patch so far, not the full test set -
+Phase 9 will scale this across all patches as part of aggregate
+spatial statistics.
+
 ## Important Decisions (LOCKED)
 - Compute: Google Colab, free-tier GPU. Checkpoints saved to Drive.
 - Data source: Google Earth Engine Python API.
@@ -215,6 +238,9 @@ qualitatively validates the uncertainty estimates are meaningful.
   carried forward from Phase 7 onward. Siamese U-Net not pursued further.
 - MC Dropout: N=20 passes, model.train() at inference, mean+std maps.
   Documented as model uncertainty, not real-world calibrated uncertainty.
+- Change characterization: rule-based (NDBI/NDVI threshold=0.05),
+  applied post-hoc to model change predictions, NOT a trained
+  multi-class classifier.
 
 ## Files Created
 (Phase 0-2 files unchanged, plus:)
@@ -226,7 +252,7 @@ qualitatively validates the uncertainty estimates are meaningful.
 - src/data/patch_cache.py (build_patch_cache)
 - src/data/patch_dataset.py (ChangeDetectionPatchDataset,
   SiamesePatchDataset)
-- src/models/baseline.py (BaselineChangeCNN - NOW includes
+- src/models/baseline.py (BaselineChangeCNN - includes
   Dropout2d(p=0.3) per block, updated in Phase 7)
 - src/models/siamese_unet.py (SharedEncoder, SiameseUNet)
 - src/training/losses.py (masked_bce_dice_loss)
@@ -237,6 +263,8 @@ qualitatively validates the uncertainty estimates are meaningful.
   print_confusion_matrix, export_fp_fn_chips)
 - src/inference/uncertainty.py (mc_dropout_predict,
   export_uncertainty_chips)
+- src/spatial/characterization.py (characterize_change,
+  summarize_categories, export_characterization_chips)
 
 ## Known Issues
 (Phase 0-2 issues unchanged, plus:)
@@ -249,7 +277,11 @@ qualitatively validates the uncertainty estimates are meaningful.
   (n=56) is small - treat test metrics with appropriate caution.
 - Colab runtime disconnects/resets on idle wipe ALL Python state even
   though old cell outputs remain visible. Assume session reset on any
-  unexpected NameError/ModuleNotFoundError - rerun from the top.
+  unexpected NameError/ModuleNotFoundError - rerun from the top,
+  INCLUDING re-creating patch datasets (test_ds etc.) and re-loading
+  model checkpoints into their variable names (model_base etc.) - a
+  reset wipes these even if t1_array/t2_array were reloaded, since
+  they're built in separate later cells.
 - Google Drive FUSE mount unstable under concurrent DataLoader worker
   reads. FIX: num_workers=0 everywhere.
 - Python module caching in Colab: git pull updating an already-imported
@@ -287,24 +319,26 @@ qualitatively validates the uncertainty estimates are meaningful.
   passes) on test set, exported 8 uncertainty chips to Drive, manually
   reviewed 3 - confirmed uncertainty concentrates at change-region
   boundaries as expected.
+- Phase 8: implemented rule-based characterize_change(), ran on 1 test
+  patch using the LOCKED baseline model's predictions, printed category
+  summary, exported color-coded characterization chip to Drive.
 
 ## Last Successful Test/Build
-MC Dropout uncertainty chips exported successfully to Drive. Manual
-review of 3 chips confirmed uncertainty (std) heatmaps concentrate
-along change-region boundaries and mixed-pixel edges, with low
-uncertainty in solid interior regions - the expected, correct pattern,
-qualitatively validating the uncertainty estimates.
+Characterization ran successfully on 1 test patch: builtup_expansion
+7.57%, vegetation_loss 1.34%, vegetation_gain 3.06%, other_uncertain
+3.53% of valid pixels (totals consistent with known model change rate
+of ~15-16%). Color-coded chip exported to Drive for visual sanity check.
 
 ## Next Exact Step
-Start Phase 8 - Change characterization. Using the dropout-enabled
-baseline's mean prediction map, apply rule-based/spectral-index
-characterization (delta-NDVI sign/magnitude, delta-NDBI sign/magnitude)
-to categorize detected change pixels as built-up expansion, vegetation
-loss, vegetation gain, or other/uncertain. This is descriptive
-characterization layered on top of the binary change detector, NOT a
-retrained multi-class model (per project scope decision - binary core
-ML + rule-based characterization layer since multi-class labels aren't
-reliably achievable given Phase 3's weakly-supervised label approach).
+Start Phase 9 - Spatial intelligence. Run change detection + MC
+Dropout + characterization across ALL test patches (not just one),
+compute total changed area (in real units via pixel resolution - 10m
+Sentinel-2 pixels), change % by category across the full test set,
+spatial hotspot detection (e.g. density clustering of built-up
+expansion pixels), and proximity analysis where feasible (roads/urban
+edge, if road vector data is available - otherwise document as a
+limitation and skip rather than fabricate). Tools: rasterio,
+geopandas, shapely, scipy per project stack.
 
 ## Anything to know before continuing
 This project spans two environments: local Windows machine (repo/git/
@@ -328,3 +362,6 @@ baseline_best.pt/baseline_latest.pt (WITH dropout, ACTIVE/current) and
 baseline_nodropout_best.pt/baseline_nodropout_latest.pt (reference
 only, from Phase 4/6). Always load baseline_best.pt (not the
 nodropout version) for any Phase 8+ work unless explicitly comparing.
+IMPORTANT: change characterization (Phase 8) has only been validated
+on 1 sample patch - Phase 9 aggregate statistics should be treated as
+provisional until run across the full test set.
