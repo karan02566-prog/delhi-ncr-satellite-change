@@ -1,7 +1,7 @@
 # PROJECT STATE
 
 ## Current Phase
-PHASE 8 — Change Characterization (COMPLETE)
+PHASE 9 — Spatial Intelligence (COMPLETE)
 
 ## Completed Phases
 - Phase 0: Project Initialization
@@ -13,10 +13,13 @@ PHASE 8 — Change Characterization (COMPLETE)
 - Phase 6: Model Evaluation
 - Phase 7: MC Dropout Uncertainty
 - Phase 8: Change Characterization
+- Phase 9: Spatial Intelligence
 
 ## Current Objective
-Move into Phase 9 - Spatial intelligence (changed area across all test
-patches, hotspot detection, proximity analysis where feasible).
+Move into Phase 10 — Interactive Dashboard (Streamlit + Folium + Plotly)
+to visualize T1/T2 satellite imagery, classified change layers, MC
+Dropout predictive uncertainty heatmaps, spatial hotspot clusters, and
+aggregate change statistics.
 
 ## Dataset Information
 ROI: rectangular bounding box [76.75, 28.30, 77.60, 28.95] (Delhi NCR,
@@ -209,16 +212,94 @@ Rule: NDBI increase beyond threshold (0.05) -> built-up expansion
 threshold -> vegetation loss; else NDVI increase beyond threshold ->
 vegetation gain; else -> other/uncertain.
 
-Sample result (1 test patch, 256x256): builtup_expansion=7.57% of
-valid pixels, vegetation_loss=1.34%, vegetation_gain=3.06%,
-other_uncertain=3.53% (totals ~15.6%, consistent with known model
-change rate). Exported color-coded characterization chip to
-{DRIVE_DIR}/reports/characterization_sample.png for visual sanity
-check (red=builtup, orange=veg loss, green=veg gain).
+## Phase 9 — Spatial Intelligence (COMPLETE)
+Scaled inference across all usable patches (n=1008 across train, val,
+test, and buffer stripes; 6,585.87 km² valid area) using the locked
+BaselineChangeCNN (with MC Dropout, N=20 passes) and rule-based change
+characterization. Executed via notebooks/04_spatial_intelligence.ipynb
+in Colab with crash-resilient streaming checkpointing.
 
-NOTE: only run on 1 sample patch so far, not the full test set -
-Phase 9 will scale this across all patches as part of aggregate
-spatial statistics.
+FINAL EMPIRICAL RESULTS (Full-Scene, n=1008 usable patches):
+  Total Valid Area Evaluated: 6585.87 km²
+  Total Changed Area (Net)  :  917.75 km² (13.94% of valid area)
+
+Category Breakdown (Full Scene):
+  - builtup_expansion : 477.22 km² (7.25% of valid | 52.00% of change)
+  - vegetation_loss   :  64.62 km² (0.98% of valid |  7.04% of change)
+  - vegetation_gain   : 300.66 km² (4.57% of valid | 32.76% of change)
+  - other_uncertain   :  75.25 km² (1.14% of valid |  8.20% of change)
+
+Predictive Uncertainty (MC Dropout, N=20):
+  Mean Uncertainty (Changed Pixels)   : 0.0836
+  Mean Uncertainty (No-Change Pixels) : 0.0238
+
+Test-Split Sanity Check (n=56 patches):
+  Test Set Change Rate   : 14.00% (consistent with locked Phase 3/6/7 rates ~12-15%)
+  Test Set Built-up Rate :  7.44%
+  Test Mean Uncertainty  : 0.0737
+
+Adaptive Baseline Urban Core Cutoff (Data-Driven):
+  Formula: urban_cutoff = mean(T1_NDBI) + 1.0 * std(T1_NDBI) = 0.0561
+  Covers 16.6% of valid scene pixels.
+  Visual verification: 6 stratified sample chips reviewed. Chips 00,
+  01, 04, 05 showed clean alignment with dense built-up fabric. Chip
+  03 (medium stratum, 12.8%) showed minor mask bleeding into fallow/
+  green agricultural parcels in the top-right quadrant. Documented as
+  an accepted weakly-supervised baseline limitation (analogous to the
+  Phase 3 agricultural NDVI speckle note).
+
+Proximity Analysis to Baseline Urban Core:
+  Evaluated on 3,884,061 model-predicted built-up expansion pixels:
+  Mean distance: 86.1 m | Median distance: 56.6 m
+  Within 500m: 99.3% | Within 1000m: 100.0% | Beyond 2000m: 0.0%
+  Bug fix verified: Original code used raw spectral delta-NDBI on patches;
+  fixed to use exact model-predicted (category_map == BUILTUP_EXPANSION)
+  mask directly from MC Dropout inference. Numbers shifted (85.4m ->
+  86.1m mean, 50.0m -> 56.6m median, 99.1% -> 99.3% within 500m). The
+  high percentage within 500m is not an artifact — it reflects genuine
+  NCR peri-urban morphology, where rural abadi/village settlement clusters
+  are spaced ~1-2km apart across the agricultural matrix.
+
+Spatial Hotspot Detection (DBSCAN):
+  Parameters derived from data/grid: z_threshold=1.645 (upper 95% one-tailed
+  significance), eps_deg=0.0369 (derived from 2.56km patch stride to
+  connect 8-neighbor tiles), min_samples=2 (minimum for multi-patch corridor).
+  Results: 58 candidate hotspot patches, 9 multi-patch growth clusters,
+  8 isolated point hotspots.
+  NOTE: Cluster counts and total builtup km² per cluster carry inherent
+  MC-Dropout-driven stochastic variance across runs (slight decimal shifts
+  are expected due to stochastic sampling, not deterministic rigidity).
+
+Framing of Vegetation Gain:
+  Vegetation gain (300.66 km², 32.76% of total change) is framed
+  explicitly as consistent with the Phase 3 agricultural NDVI variability
+  limitation: crop-cycle phenology differences (fallow vs. planted fields
+  between Jan/Feb 2022 and Jan/Feb 2026 windows across the surrounding
+  agricultural matrix), NOT as an ecological or afforestation finding.
+
+Explicitly Skipped Analyses (Documented Limitations):
+  - Road proximity: Skipped due to lack of OSM/SHP/GeoJSON road vector
+    data in the repository/data directories (documented as a data limitation,
+    avoiding data fabrication).
+  - Administrative / NCR Sub-Region breakdown: Skipped due to lack of
+    administrative boundary vectors and strict adherence to the non-political,
+    continuous physical/geospatial framing.
+
+Resume Mechanism Verification:
+  Tested on actual partial cache (FORCE_FRESH_RUN=True interrupted mid-run,
+  then FORCE_FRESH_RUN=False successfully printed "Resuming: found 179
+  already processed patches" and continued from patch 200 to 1008 without
+  restarting or duplicating). (Note: an earlier test was invalid as it
+  picked up a stale full cache; this is now verified on a real partial run).
+
+Exported Artifacts on Drive:
+  {DRIVE_DIR}/reports/spatial/patch_spatial_metrics.csv
+  {DRIVE_DIR}/reports/spatial/full_scene_spatial_summary.json
+  {DRIVE_DIR}/reports/spatial/test_split_sanity_check.json
+  {DRIVE_DIR}/reports/spatial/urban_proximity_summary.json
+  {DRIVE_DIR}/reports/spatial/spatial_intelligence_hotspot_maps.png
+  {DRIVE_DIR}/reports/spatial/urban_core_verification/*.png (6 chips + log)
+  {DRIVE_DIR}/reports/spatial/full_scene_masks.npz
 
 ## Important Decisions (LOCKED)
 - Compute: Google Colab, free-tier GPU. Checkpoints saved to Drive.
@@ -241,33 +322,27 @@ spatial statistics.
 - Change characterization: rule-based (NDBI/NDVI threshold=0.05),
   applied post-hoc to model change predictions, NOT a trained
   multi-class classifier.
+- Spatial Intelligence: full-scene 1008-patch scope (6,585.87 km²),
+  adaptive data-driven thresholds for urban core (NDBI cutoff 0.0561)
+  and hotspots (z >= 1.645, DBSCAN eps=0.0369 deg, min_samples=2).
+  Vegetation gain framed as agricultural phenology. Road/administrative
+  breakdowns skipped due to vector data absence.
 
 ## Files Created
-(Phase 0-2 files unchanged, plus:)
-- src/data/label_generation.py (compute_ndvi, compute_ndbi,
-  compute_valid_mask, compute_change_labels, label_patches,
-  select_verification_sample, export_verification_chips,
-  geographic_split, summarize_split, save_split_manifest)
-- notebooks/03_label_generation.ipynb
-- src/data/patch_cache.py (build_patch_cache)
-- src/data/patch_dataset.py (ChangeDetectionPatchDataset,
-  SiamesePatchDataset)
-- src/models/baseline.py (BaselineChangeCNN - includes
-  Dropout2d(p=0.3) per block, updated in Phase 7)
-- src/models/siamese_unet.py (SharedEncoder, SiameseUNet)
-- src/training/losses.py (masked_bce_dice_loss)
-- src/training/metrics.py (compute_change_metrics)
-- src/training/train.py (train_baseline)
-- src/training/train_siamese.py (train_siamese)
-- src/training/evaluate.py (compute_confusion_matrix,
-  print_confusion_matrix, export_fp_fn_chips)
-- src/inference/uncertainty.py (mc_dropout_predict,
-  export_uncertainty_chips)
-- src/spatial/characterization.py (characterize_change,
-  summarize_categories, export_characterization_chips)
+(Phase 0-8 files unchanged, plus:)
+- src/spatial/hotspots.py (calculate_pixel_area, derive_adaptive_urban_cutoff,
+  export_urban_cutoff_verification_chips, compute_patch_geometries,
+  detect_spatial_hotspots, compute_urban_edge_proximity)
+- src/spatial/spatial_analysis.py (FullScenePatchDataset,
+  run_spatial_pipeline with streaming checkpointing/resume and mask
+  export, export_spatial_hotspot_maps)
+- tests/test_spatial.py (7 unit tests covering area math, adaptive cutoff,
+  geometries, hotspots, proximity, and dataset slicing)
+- notebooks/04_spatial_intelligence.ipynb (consolidated 2-cell Colab
+  notebook with idempotent loading and FORCE_FRESH_RUN toggle)
 
 ## Known Issues
-(Phase 0-2 issues unchanged, plus:)
+(Phase 0-8 issues unchanged, plus:)
 - Colab free-tier RAM: full T1/T2 arrays as float64 (~3.3GB each) plus
   intermediate arrays caused OOM crash. FIX: cast to float32 on read.
 - Residual agricultural NDVI speckle noise in a minority of high-change
@@ -276,69 +351,44 @@ spatial statistics.
   (patch availability non-uniform across raster width). Test set
   (n=56) is small - treat test metrics with appropriate caution.
 - Colab runtime disconnects/resets on idle wipe ALL Python state even
-  though old cell outputs remain visible. Assume session reset on any
-  unexpected NameError/ModuleNotFoundError - rerun from the top,
-  INCLUDING re-creating patch datasets (test_ds etc.) and re-loading
-  model checkpoints into their variable names (model_base etc.) - a
-  reset wipes these even if t1_array/t2_array were reloaded, since
-  they're built in separate later cells.
+  though old cell outputs remain visible. FIX: consolidated notebook
+  into two robust cells with idempotent loading checks.
+- Checkpoint key mismatch: torch.save in train.py used "model_state"
+  rather than "model_state_dict". FIX: checkpoint.get("model_state", ...).
+- Proximity analysis mask bug: initially used raw spectral delta-NDBI
+  on patches; fixed to use model-predicted BUILTUP_EXPANSION mask directly.
+- Chip 03 urban core mask bleeding: adaptive T1 NDBI cutoff (0.0561)
+  exhibits minor bleeding into fallow/green agricultural plots in 1 of 6
+  verification chips — accepted weakly-supervised limitation.
+- Hotspot cluster metrics exhibit slight run-to-run variation due to
+  inherent MC Dropout stochastic sampling (not a deterministic bug).
 - Google Drive FUSE mount unstable under concurrent DataLoader worker
   reads. FIX: num_workers=0 everywhere.
-- Python module caching in Colab: git pull updating an already-imported
-  .py file requires importlib.reload() or Restart Session to pick up
-  changes (new names/classes won't appear via plain re-import).
-- Reusing a bare `model` variable name across multiple models left it
-  bound to whichever was trained/loaded last, causing a TypeError when
-  passed to code expecting a different model's forward signature. FIX:
-  always load models into explicitly distinct variable names
-  (model_base, model_siam), never reuse a generic `model`.
-- Siamese U-Net underperformed baseline CNN on both val/test aggregate
-  metrics AND pixel-level confusion matrix - not a bug, a genuine,
-  consistently-confirmed comparison result.
-- Adding dropout to BaselineChangeCNN required a full retrain (weights
-  incompatible with new architecture) and cost ~5-6 F1 points on test
-  set vs the non-dropout version - expected regularization tradeoff,
-  disclosed, not hidden. Non-dropout checkpoint preserved on Drive
-  under baseline_nodropout_*.pt for reference/comparison only.
 
 ## Commands Already Run
-(Phase 0-2 unchanged, plus:)
-- Phase 3: computed change labels, generated 1008 usable label patches,
-  exported 45 verification chips, manually reviewed, generated
-  geographic split (700/140/56), saved manifest to Drive.
-- Phase 4: built patch cache, trained BaselineChangeCNN (no dropout)
-  20 epochs, evaluated val/test.
-- Phase 5: trained SiameseUNet 20 epochs on same cache/split/loss,
-  evaluated val/test, compared against baseline.
-- Phase 6: computed pixel-level confusion matrix for both models on
-  test set, exported FP/FN error-analysis chips, locked in
-  BaselineChangeCNN as the model going forward.
-- Phase 7: added Dropout2d(p=0.3) to BaselineChangeCNN, renamed old
-  no-dropout checkpoints to preserve them, retrained 20 epochs from
-  scratch (resume=False), evaluated val/test, ran MC Dropout (N=20
-  passes) on test set, exported 8 uncertainty chips to Drive, manually
-  reviewed 3 - confirmed uncertainty concentrates at change-region
-  boundaries as expected.
-- Phase 8: implemented rule-based characterize_change(), ran on 1 test
-  patch using the LOCKED baseline model's predictions, printed category
-  summary, exported color-coded characterization chip to Drive.
+(Phase 0-8 unchanged, plus:)
+- Phase 9: implemented spatial intelligence modules and unit tests (7 passed),
+  derived adaptive urban core cutoff (0.0561), exported and visually reviewed
+  6 urban core verification chips, executed full-scene 1008-patch MC Dropout
+  pipeline on GPU with streaming checkpointing, verified resume=True on partial
+  cache, ran DBSCAN hotspot detection and Euclidean proximity analysis,
+  and exported all spatial figures and JSON/CSV summary artifacts to Drive.
 
 ## Last Successful Test/Build
-Characterization ran successfully on 1 test patch: builtup_expansion
-7.57%, vegetation_loss 1.34%, vegetation_gain 3.06%, other_uncertain
-3.53% of valid pixels (totals consistent with known model change rate
-of ~15-16%). Color-coded chip exported to Drive for visual sanity check.
+Full-scene spatial intelligence pipeline completed across all 1008 usable
+patches (6,585.87 km²): Net changed area 917.75 km² (13.94%), built-up expansion
+477.22 km² (52.00% of change), vegetation gain 300.66 km² (agricultural phenology),
+vegetation loss 64.62 km², other/uncertain 75.25 km². Test-split sanity check
+change rate 14.00% (consistent with Phase 6/7). Proximity to baseline urban core:
+mean 86.1m, median 56.6m, 99.3% within 500m. 9 multi-patch growth clusters detected.
+All artifacts exported to Drive.
 
 ## Next Exact Step
-Start Phase 9 - Spatial intelligence. Run change detection + MC
-Dropout + characterization across ALL test patches (not just one),
-compute total changed area (in real units via pixel resolution - 10m
-Sentinel-2 pixels), change % by category across the full test set,
-spatial hotspot detection (e.g. density clustering of built-up
-expansion pixels), and proximity analysis where feasible (roads/urban
-edge, if road vector data is available - otherwise document as a
-limitation and skip rather than fabricate). Tools: rasterio,
-geopandas, shapely, scipy per project stack.
+Start Phase 10 — Interactive Dashboard. Build a Streamlit application
+(app/app.py or src/visualization/dashboard.py) with Folium interactive map
+overlays and Plotly charts to explore the T1/T2 satellite imagery, classified
+change categories, predictive uncertainty heatmaps, spatial hotspot clusters,
+and aggregate statistics generated in Phase 9.
 
 ## Anything to know before continuing
 This project spans two environments: local Windows machine (repo/git/
@@ -362,6 +412,8 @@ baseline_best.pt/baseline_latest.pt (WITH dropout, ACTIVE/current) and
 baseline_nodropout_best.pt/baseline_nodropout_latest.pt (reference
 only, from Phase 4/6). Always load baseline_best.pt (not the
 nodropout version) for any Phase 8+ work unless explicitly comparing.
-IMPORTANT: change characterization (Phase 8) has only been validated
-on 1 sample patch - Phase 9 aggregate statistics should be treated as
-provisional until run across the full test set.
+IMPORTANT: vegetation_gain (300.66 km², 32.76% of total change) must
+be reported as agricultural crop-cycle phenology variability, not as an
+ecological finding.
+IMPORTANT: all Phase 9 spatial results and data masks are exported to
+{DRIVE_DIR}/reports/spatial/ and ready for Phase 10 dashboard integration.
