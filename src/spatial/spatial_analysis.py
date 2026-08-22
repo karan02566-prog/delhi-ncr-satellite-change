@@ -5,7 +5,7 @@ Orchestrates full-scene inference and spatial analytics across all usable
 patches (~1008 patches covering the entire Delhi NCR study ROI):
   - Streaming MC Dropout inference (N=20 stochastic forward passes, model.train()).
   - Rule-based change characterization per patch.
-  - Crash-resilient incremental result saving (JSONL/CSV) with resume support.
+  - Crash-resilient incremental result saving (JSONL/CSV/NPZ) with resume support.
   - Full-scene aggregate physical area calculations (km², ha, %).
   - Dedicated test-split sanity check (n=56) against Phase 3/6/7 locked metrics.
   - Full-scene and test-set spatial visualizations and export artifacts.
@@ -75,7 +75,6 @@ class FullScenePatchDataset(Dataset):
             fname = f"patch_{idx:05d}_r{r}_c{c}.npz"
             fpath = self.cache_dir / split / fname
             if not fpath.exists():
-                # Try finding in root or other split dirs
                 matches = list(self.cache_dir.glob(f"*/patch_*_r{r}_c{c}.npz"))
                 if matches:
                     fpath = matches[0]
@@ -112,7 +111,7 @@ def run_spatial_pipeline(
     ndvi_thresh: float = 0.05,
     ndbi_thresh: float = 0.05,
     patch_size: int = 256,
-) -> Tuple[pd.DataFrame, Dict, Dict]:
+) -> Tuple[pd.DataFrame, Dict, Dict, np.ndarray]:
     """
     Executes full-scene MC Dropout inference and rule-based change characterization
     across all usable patches (~1008), with crash-resilient incremental saving.
@@ -134,10 +133,15 @@ def run_spatial_pipeline(
         patch_df: DataFrame of all processed patch metrics.
         full_scene_summary: Aggregate physical area metrics across all usable patches.
         test_sanity_summary: Sanity check metrics for the test split.
+        full_builtup_mask: (H, W) boolean mask of model-predicted built-up expansion pixels.
     """
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     streaming_file = out_path / "patch_results_streaming.jsonl"
+    masks_file = out_path / "full_scene_masks.npz"
+
+    H, W = t1_array.shape[1], t1_array.shape[2]
+    full_builtup_mask = np.zeros((H, W), dtype=bool)
 
     # Check for existing completed patch indices to support resume
     processed_indices = set()
@@ -153,6 +157,13 @@ def run_spatial_pipeline(
                     except json.JSONDecodeError:
                         pass
         print(f"Resuming: found {len(processed_indices)} already processed patches.")
+        if masks_file.exists():
+            try:
+                mdata = np.load(masks_file)
+                if "builtup_mask" in mdata:
+                    full_builtup_mask = mdata["builtup_mask"].copy()
+            except Exception:
+                pass
 
     dataset = FullScenePatchDataset(
         patch_records=patch_records,
@@ -197,18 +208,22 @@ def run_spatial_pipeline(
             ndbi_thresh=ndbi_thresh,
         )
 
-        builtup_px = int(((category_map == BUILTUP_EXPANSION) & valid_mask).sum())
+        builtup_mask_patch = (category_map == BUILTUP_EXPANSION) & valid_mask
+        builtup_px = int(builtup_mask_patch.sum())
         veg_loss_px = int(((category_map == VEGETATION_LOSS) & valid_mask).sum())
         veg_gain_px = int(((category_map == VEGETATION_GAIN) & valid_mask).sum())
         other_px = int(((category_map == OTHER_UNCERTAIN) & valid_mask).sum())
         no_change_px = int(((category_map == NO_CHANGE) & valid_mask).sum())
+
+        # Update full-scene built-up expansion mask
+        r, c = meta["row"], meta["col"]
+        full_builtup_mask[r:r + patch_size, c:c + patch_size] |= builtup_mask_patch
 
         # MC Dropout uncertainty breakdown
         unc_change = float(std_prob[pred_change].mean()) if change_pixels > 0 else 0.0
         unc_nochange = float(std_prob[~pred_change & valid_mask].mean()) if (valid_pixels - change_pixels) > 0 else 0.0
         unc_all = float(std_prob[valid_mask].mean()) if valid_pixels > 0 else 0.0
 
-        r, c = meta["row"], meta["col"]
         if transform is not None:
             cx, cy = transform * (c + patch_size / 2.0, r + patch_size / 2.0)
         else:
@@ -244,6 +259,9 @@ def run_spatial_pipeline(
             print(f"Progress: [{idx + 1}/{total_patches}] patches processed ({elapsed:.1f}s)")
 
     streaming_fp.close()
+
+    # Save full built-up mask array
+    np.savez_compressed(masks_file, builtup_mask=full_builtup_mask)
 
     all_records = existing_records + new_records
     all_records.sort(key=lambda x: x["patch_index"])
@@ -338,7 +356,7 @@ def run_spatial_pipeline(
     with open(out_path / "test_split_sanity_check.json", "w") as f:
         json.dump(test_sanity_summary, f, indent=2)
 
-    return patch_df, full_scene_summary, test_sanity_summary
+    return patch_df, full_scene_summary, test_sanity_summary, full_builtup_mask
 
 
 # ---------------------------------------------------------------------------
@@ -406,4 +424,3 @@ def export_spatial_hotspot_maps(
     fig.savefig(fig_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Exported spatial maps to {fig_path}")
-
