@@ -1,0 +1,41 @@
+{
+  "scope": "full_scene_all_usable_patches",
+  "total_patches": 1008,
+  "total_valid_km2": 6585.8724,
+  "total_valid_ha": 658587.24,
+  "total_changed_km2": 917.7532,
+  "total_changed_ha": 91775.32,
+  "overall_change_percentage": 13.935180402219757,
+  "categories": {
+    "builtup_expansion": {
+      "pixels": 4772218,
+      "area_km2": 477.2218,
+      "area_ha": 47722.18,
+      "pct_of_valid_area": 7.246144034008312,
+      "pct_of_total_change": 51.99892520124146
+    },
+    "vegetation_loss": {
+      "pixels": 646210,
+      "area_km2": 64.621,
+      "area_ha": 6462.1,
+      "pct_of_valid_area": 0.9812063774572978,
+      "pct_of_total_change": 7.041217617111005
+    },
+    "vegetation_gain": {
+      "pixels": 3006583,
+      "area_km2": 300.6583,
+      "area_ha": 30065.83,
+      "pct_of_valid_area": 4.565200807716834,
+      "pct_of_total_change": 32.760256243181715
+    },
+    "other_uncertain": {
+      "pixels": 752521,
+      "area_km2": 75.2521,
+      "area_ha": 7525.21,
+      "pct_of_valid_area": 1.1426291830373148,
+      "pct_of_total_change": 8.199600938465808
+    }
+  },
+  "mean_uncertainty_change": 0.08362856318819381,
+  "mean_uncertainty_nochange": 0.02383250300680095
+}

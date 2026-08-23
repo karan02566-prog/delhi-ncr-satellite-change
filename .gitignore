@@ -39,4 +39,4 @@ __pycache__/
 Thumbs.db
 
 # Jupyter
-.ipynb_checkpoints
+.ipynb_checkpoints!data/dashboard/spatial/*.json

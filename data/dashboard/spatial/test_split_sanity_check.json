@@ -1,0 +1,10 @@
+{
+  "scope": "test_split_sanity_check",
+  "patch_count": 56,
+  "total_valid_pixels": 3670016,
+  "total_change_pixels": 513859,
+  "test_change_rate": 0.14001546587262834,
+  "test_builtup_rate": 0.07442201886858259,
+  "mean_uncertainty_change": 0.07373277071331229,
+  "mean_uncertainty_nochange": 0.021759374582740878
+}

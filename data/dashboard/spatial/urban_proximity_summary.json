@@ -1,0 +1,11 @@
+{
+  "mean_distance_m": 86.14354601280485,
+  "median_distance_m": 56.568542494923804,
+  "p25_distance_m": 22.360679774997898,
+  "p75_distance_m": 111.80339887498948,
+  "p90_distance_m": 200.0,
+  "fraction_within_500m": 0.9932104567873676,
+  "fraction_within_1000m": 0.9998810523315674,
+  "fraction_beyond_2000m": 0.0,
+  "total_builtup_pixels_analyzed": 3884061
+}
