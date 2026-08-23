@@ -1,7 +1,7 @@
 # PROJECT STATE
 
 ## Current Phase
-PHASE 9 — Spatial Intelligence (COMPLETE)
+PHASE 10 — Interactive Dashboard (COMPLETE, user-confirmed working)
 
 ## Completed Phases
 - Phase 0: Project Initialization
@@ -14,12 +14,12 @@ PHASE 9 — Spatial Intelligence (COMPLETE)
 - Phase 7: MC Dropout Uncertainty
 - Phase 8: Change Characterization
 - Phase 9: Spatial Intelligence
+- Phase 10: Interactive Dashboard
 
 ## Current Objective
-Move into Phase 10 — Interactive Dashboard (Streamlit + Folium + Plotly)
-to visualize T1/T2 satellite imagery, classified change layers, MC
-Dropout predictive uncertainty heatmaps, spatial hotspot clusters, and
-aggregate change statistics.
+Move into Phase 11 — Final Validation: recheck data quality, metrics,
+leakage, alignment, uncertainty implementation, reproducibility,
+documentation, and all claims made so far across the project.
 
 ## Dataset Information
 ROI: rectangular bounding box [76.75, 28.30, 77.60, 28.95] (Delhi NCR,
@@ -300,6 +300,82 @@ Exported Artifacts on Drive:
   {DRIVE_DIR}/reports/spatial/spatial_intelligence_hotspot_maps.png
   {DRIVE_DIR}/reports/spatial/urban_core_verification/*.png (6 chips + log)
   {DRIVE_DIR}/reports/spatial/full_scene_masks.npz
+  {DRIVE_DIR}/reports/spatial/patch_results_streaming.jsonl (raw per-patch
+  streaming log, not required by dashboard but retained)
+
+## Phase 10 — Interactive Dashboard (COMPLETE)
+Built as a local Streamlit app (app/app.py), NOT run in Colab. Reads
+the aggregated Phase 9 artifacts, which were transferred from Drive to
+local disk since Google Drive for Desktop is not installed on the
+user's machine.
+
+Artifact transfer workflow (documented for reproducibility):
+  [COLAB] shutil.make_archive() zips {DRIVE_DIR}/reports/spatial/ ->
+    files.download() triggers browser download of spatial_artifacts.zip
+  [LOCAL] Expand-Archive -Path <downloaded zip> -DestinationPath
+    data\dashboard\spatial -Force
+
+Local cache location: data/dashboard/spatial/ (new directory, not part
+of the original Phase 0 tree - required because the dashboard runs on
+the local machine, not Colab, and Phase 9 outputs live on Drive).
+
+Confirmed real schema of all Phase 9 artifacts (verified via
+scripts/inspect_dashboard_artifacts.py before writing dashboard code -
+no guessed column names used):
+  - patch_spatial_metrics.csv: 1008 rows x 18 cols (patch_index, row,
+    col, split, valid_pixels, change_pixels, no_change_pixels,
+    builtup_pixels, veg_loss_pixels, veg_gain_pixels, other_pixels,
+    change_fraction, builtup_fraction, mean_uncertainty_all/change/
+    nochange, centroid_x, centroid_y)
+  - full_scene_spatial_summary.json, test_split_sanity_check.json,
+    urban_proximity_summary.json: flat summary dicts
+  - spatial_intelligence_hotspot_maps.png: 3398x1138 RGBA static figure
+  - full_scene_masks.npz: ONLY key 'builtup_mask', shape (7244, 9463),
+    dtype bool, file size 2.2MB. NO change mask or uncertainty raster
+    was retained on disk from Phase 9 - only patch-aggregated stats
+    exist for those. Dashboard discloses this explicitly rather than
+    fabricating a substitute.
+
+Dashboard architecture (app/app.py):
+  6 tabs: Overview, Interactive Map, Uncertainty, Hotspots & Proximity,
+  Built-up Mask, Methodology & Limitations.
+  - Overview: KPI cards (valid area, net changed area, patch count,
+    mean uncertainty by class) + category pie/bar charts + test-split
+    sanity metrics.
+  - Interactive Map: Folium map with real georeferenced patch
+    footprints (rectangles, not point markers) sized from the actual
+    centroid spacing in the data (not a hardcoded assumption). Basemap
+    switcher: Satellite (Esri World Imagery tiles, free, no API key),
+    Light (CartoDB positron), Dark (CartoDB dark_matter). Color-by
+    selector: change_fraction / builtup_fraction / mean_uncertainty_all
+    / dominant_category. Fullscreen control enabled.
+  - Uncertainty: mean-by-class bar chart, per-patch uncertainty
+    histogram, change-fraction vs uncertainty scatter colored by
+    dominant category.
+  - Hotspots & Proximity: embeds the Phase 9 static hotspot PNG,
+    proximity percentile bar chart, disclosure note on the 500m/
+    peri-urban-morphology interpretation.
+  - Built-up Mask: downsampled (~15x) built-up mask image rendered
+    from full_scene_masks.npz. Includes an explicit, NOT-YET-RESOLVED
+    disclosure about a rectangular near-zero region visible in the
+    mask (see Known Issues / Open Question below) - phrased as
+    "under investigation," not asserted as either real signal or
+    artifact.
+  - Methodology & Limitations: full written summary of data/labels/
+    split/model/uncertainty/characterization methodology plus every
+    disclosed limitation carried over from Phases 3-9.
+  Styling: custom CSS (Inter font, gradient header card with sensor/
+  date/model badges, styled KPI cards, styled tab bar, blue-accented
+  "disclosure box" callouts used for every honesty/limitation note).
+  All Plotly charts use the `plotly_dark` template for visual
+  consistency with the dark UI theme.
+
+Dependencies added: streamlit, plotly, folium, streamlit-folium,
+branca, pillow (all appended to requirements.txt).
+
+USER CONFIRMATION: user ran `streamlit run app\app.py` locally,
+reviewed all 6 tabs, confirmed the app renders correctly and is
+"smooth enough" - Phase 10 accepted as complete.
 
 ## Important Decisions (LOCKED)
 - Compute: Google Colab, free-tier GPU. Checkpoints saved to Drive.
@@ -309,7 +385,10 @@ Exported Artifacts on Drive:
   Documented as weakly-supervised, not pixel-perfect ground truth.
 - No political framing anywhere in this project.
 - Local machine (Windows/PowerShell) handles repo/git/file structure.
-  Colab notebooks handle GEE queries and heavy compute.
+  Colab notebooks handle GEE queries and heavy compute. Streamlit
+  dashboard also runs locally (Phase 10) - it is a THIRD workflow
+  surface, reading artifacts synced down from Drive via manual zip/
+  download rather than a live Drive mount.
 - Patch size: 256x256, fixed from Phase 3 onward.
 - Geographic (column-stripe) train/val/test split with buffer zones,
   not random patch split - prevents spatial leakage.
@@ -327,22 +406,25 @@ Exported Artifacts on Drive:
   and hotspots (z >= 1.645, DBSCAN eps=0.0369 deg, min_samples=2).
   Vegetation gain framed as agricultural phenology. Road/administrative
   breakdowns skipped due to vector data absence.
+- Dashboard: patch-aggregated visualization only for change/
+  uncertainty (no pixel-level rasters retained for those); only
+  built-up mask exists as a raw pixel array and is shown at reduced
+  resolution. This limitation is disclosed in-app, not hidden.
+- Dashboard basemap: Esri World Imagery (free, no key) for satellite
+  view; CartoDB positron/dark_matter as alternate light/dark options.
 
 ## Files Created
-(Phase 0-8 files unchanged, plus:)
-- src/spatial/hotspots.py (calculate_pixel_area, derive_adaptive_urban_cutoff,
-  export_urban_cutoff_verification_chips, compute_patch_geometries,
-  detect_spatial_hotspots, compute_urban_edge_proximity)
-- src/spatial/spatial_analysis.py (FullScenePatchDataset,
-  run_spatial_pipeline with streaming checkpointing/resume and mask
-  export, export_spatial_hotspot_maps)
-- tests/test_spatial.py (7 unit tests covering area math, adaptive cutoff,
-  geometries, hotspots, proximity, and dataset slicing)
-- notebooks/04_spatial_intelligence.ipynb (consolidated 2-cell Colab
-  notebook with idempotent loading and FORCE_FRESH_RUN toggle)
+(Phase 0-9 files unchanged, plus:)
+- app/app.py (Streamlit dashboard, v2 - custom CSS theming, real
+  georeferenced patch-rectangle map with satellite basemap, 6 tabs)
+- scripts/inspect_dashboard_artifacts.py (one-time diagnostic script,
+  confirmed real schema of all Phase 9 exports before dashboard was
+  written against them - not part of the production pipeline)
+- data/dashboard/spatial/ (local cache dir; contains all Phase 9
+  exports transferred from Drive via Colab zip + manual download)
 
 ## Known Issues
-(Phase 0-8 issues unchanged, plus:)
+(Phase 0-9 issues unchanged, plus:)
 - Colab free-tier RAM: full T1/T2 arrays as float64 (~3.3GB each) plus
   intermediate arrays caused OOM crash. FIX: cast to float32 on read.
 - Residual agricultural NDVI speckle noise in a minority of high-change
@@ -364,36 +446,65 @@ Exported Artifacts on Drive:
   inherent MC Dropout stochastic sampling (not a deterministic bug).
 - Google Drive FUSE mount unstable under concurrent DataLoader worker
   reads. FIX: num_workers=0 everywhere.
+- Google Drive for Desktop is NOT installed on the user's local
+  machine - Phase 10 artifact sync uses a manual Colab-zip ->
+  browser-download -> Expand-Archive workflow instead of a live
+  Drive mount. Works fine, just an extra manual step vs. the ideal
+  live-sync path; documented for reproducibility.
+- full_scene_masks.npz retains ONLY the built-up mask, not change or
+  uncertainty rasters - a scope gap from Phase 9's export step, not
+  from Phase 10. Dashboard cannot show pixel-level change/uncertainty
+  maps as a result; discloses this rather than fabricating a substitute.
+- OPEN / UNRESOLVED: the downsampled built-up mask (Dashboard, Built-up
+  Mask tab) shows a sharp-edged rectangular near-zero region in the
+  top-left of the scene. NOT yet determined whether this reflects (a)
+  a genuinely low-built-up area (e.g. agricultural/floodplain land), or
+  (b) a nodata/coverage gap in the source Sentinel-2 tile that reads as
+  "False" because no separate valid-pixel mask was exported alongside
+  builtup_mask. A diagnostic check was proposed (cross-referencing
+  valid_pixels from patch_spatial_metrics.csv for patches in that
+  row/col region) but the result has not yet been reported back.
+  Dashboard currently flags this region as "under investigation" rather
+  than asserting either explanation - do not change this wording to a
+  confident claim until the diagnostic is actually run and confirmed.
 
 ## Commands Already Run
-(Phase 0-8 unchanged, plus:)
-- Phase 9: implemented spatial intelligence modules and unit tests (7 passed),
-  derived adaptive urban core cutoff (0.0561), exported and visually reviewed
-  6 urban core verification chips, executed full-scene 1008-patch MC Dropout
-  pipeline on GPU with streaming checkpointing, verified resume=True on partial
-  cache, ran DBSCAN hotspot detection and Euclidean proximity analysis,
-  and exported all spatial figures and JSON/CSV summary artifacts to Drive.
+(Phase 0-9 unchanged, plus:)
+- Phase 10: created data/dashboard/spatial/ and scripts/ locally, wrote
+  inspect_dashboard_artifacts.py, ran it against the transferred Phase 9
+  artifacts to confirm real schema, wrote app/app.py (v1, then v2 full
+  replacement with satellite basemap + custom theming), installed
+  streamlit/plotly/folium/streamlit-folium/branca/pillow, ran
+  `streamlit run app\app.py` locally and confirmed all 6 tabs render
+  with real data.
 
 ## Last Successful Test/Build
-Full-scene spatial intelligence pipeline completed across all 1008 usable
-patches (6,585.87 km²): Net changed area 917.75 km² (13.94%), built-up expansion
-477.22 km² (52.00% of change), vegetation gain 300.66 km² (agricultural phenology),
-vegetation loss 64.62 km², other/uncertain 75.25 km². Test-split sanity check
-change rate 14.00% (consistent with Phase 6/7). Proximity to baseline urban core:
-mean 86.1m, median 56.6m, 99.3% within 500m. 9 multi-patch growth clusters detected.
-All artifacts exported to Drive.
+Phase 10 dashboard (app/app.py) launched successfully via
+`streamlit run app\app.py`; user reviewed all 6 tabs (Overview,
+Interactive Map, Uncertainty, Hotspots & Proximity, Built-up Mask,
+Methodology & Limitations) against real Phase 9 data and confirmed
+the app works smoothly. Satellite basemap, patch-rectangle map
+rendering, and styled KPI/chart components all confirmed functional.
 
 ## Next Exact Step
-Start Phase 10 — Interactive Dashboard. Build a Streamlit application
-(app/app.py or src/visualization/dashboard.py) with Folium interactive map
-overlays and Plotly charts to explore the T1/T2 satellite imagery, classified
-change categories, predictive uncertainty heatmaps, spatial hotspot clusters,
-and aggregate statistics generated in Phase 9.
+1. (Optional, recommended before Phase 11) Run the pending diagnostic
+   on the built-up mask's rectangular near-zero region:
+   `python -c "import pandas as pd; df = pd.read_csv('data/dashboard/spatial/patch_spatial_metrics.csv'); tl = df[(df['row'] < 2000) & (df['col'] < 3500)]; print(tl[['row','col','valid_pixels','builtup_fraction','change_fraction']].describe())"`
+   and report the output back so the dashboard's mask-tab disclosure
+   can be finalized with a confirmed explanation instead of "under
+   investigation."
+2. Start Phase 11 — Final Validation: recheck data quality, metrics,
+   leakage, alignment, uncertainty implementation, reproducibility,
+   documentation, and all claims made across Phases 0-10 before moving
+   to Phase 12 (portfolio polish / README / final report).
 
 ## Anything to know before continuing
-This project spans two environments: local Windows machine (repo/git/
-structure) and Google Colab (training/GEE queries). Commands are
-always labeled [LOCAL - PowerShell] or [COLAB - Notebook cell].
+This project spans THREE environments now: local Windows machine
+(repo/git/structure + Phase 10 Streamlit dashboard), Google Colab
+(training/GEE queries/heavy compute), and Google Drive (storage layer
+bridging the two, accessed locally via manual zip/download since Drive
+for Desktop isn't installed). Commands are always labeled
+[LOCAL - PowerShell] or [COLAB - Notebook cell].
 GitHub repo: https://github.com/karan02566-prog/delhi-ncr-satellite-change
 GEE project ID: stellar-stream-492412-p9
 IMPORTANT: watch for Google account mismatches between Drive mount and
@@ -415,5 +526,12 @@ nodropout version) for any Phase 8+ work unless explicitly comparing.
 IMPORTANT: vegetation_gain (300.66 km², 32.76% of total change) must
 be reported as agricultural crop-cycle phenology variability, not as an
 ecological finding.
-IMPORTANT: all Phase 9 spatial results and data masks are exported to
-{DRIVE_DIR}/reports/spatial/ and ready for Phase 10 dashboard integration.
+IMPORTANT: the Phase 10 dashboard is functionally complete and
+user-confirmed, but has one open, unresolved data question (the
+rectangular near-zero built-up-mask region) - do not silently resolve
+this in Phase 11/12 documentation without the diagnostic actually
+having been run and its result reported.
+IMPORTANT: Git commit for Phase 10 (`feat: add change intelligence
+dashboard`) has NOT yet been confirmed as run - verify with user before
+assuming it's committed, per the project's "never push automatically
+unless asked" workflow rule.

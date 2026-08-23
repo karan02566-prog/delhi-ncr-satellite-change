@@ -1,0 +1,7 @@
+chip_index,filename,row,col,stratum,urban_fraction,urban_cutoff
+0,urban_cutoff_chip_00_low_r256_c512.png,256,512,low,0.0586,0.0561
+1,urban_cutoff_chip_01_low_r5120_c6912.png,5120,6912,low,0.0375,0.0561
+2,urban_cutoff_chip_02_medium_r2816_c6912.png,2816,6912,medium,0.2007,0.0561
+3,urban_cutoff_chip_03_medium_r2816_c5376.png,2816,5376,medium,0.1282,0.0561
+4,urban_cutoff_chip_04_high_r5632_c3328.png,5632,3328,high,0.2848,0.0561
+5,urban_cutoff_chip_05_high_r2048_c6144.png,2048,6144,high,0.3149,0.0561

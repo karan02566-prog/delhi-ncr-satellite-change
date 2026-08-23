@@ -16,4 +16,7 @@ streamlit
 folium
 plotly
 jupyter
-pytest
+pyteststreamlit
+plotly
+folium
+streamlit-folium
