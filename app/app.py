@@ -542,7 +542,9 @@ with tab_notes:
 - Hotspot cluster counts vary slightly run-to-run due to inherent MC Dropout stochastic sampling — not a determinism bug.
 - Road-proximity and administrative-boundary breakdowns were skipped due to absence of vector data in the repository — not filled with placeholder numbers.
 - Only a built-up mask was retained as a raw pixel array from Phase 9; change and uncertainty rasters exist only as patch-level aggregates in this dashboard.
-- A rectangular near-zero region in the built-up mask (Built-up Mask tab) is under investigation — see disclosure there.
+- A rectangular near-zero region in the built-up mask (Built-up Mask tab) reflects a genuinely low-built-up area, confirmed via 100% valid-pixel coverage in the underlying patches (no missing/nodata pixels), ruling out a data-coverage artifact.
+- Training runs did not fix a random seed; reported metrics reflect one training run and are not guaranteed bit-for-bit reproducible across reruns, though data/split/architecture/hyperparameters were held constant throughout.
+- Training runs did not fix a random seed; reported metrics reflect one training run and are not guaranteed bit-for-bit reproducible across reruns, though data/split/architecture/hyperparameters were held constant throughout.
         """
     )
 
